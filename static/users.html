@@ -416,16 +416,16 @@
                                     <i class="fas fa-user text-blue-400 text-sm"></i>
                                 </div>
                                 <span class="font-medium">${escapeHtml(user.username)}</span>
-                                ${user.username === 'admin' ? '<span class="status-badge bg-yellow-500/20 text-yellow-500 ml-2">管理员</span>' : ''}
+                                ${user.username === 'admin' ? '<span class="status-badge bg-yellow-500/20 text-yellow-500 ml-2 whitespace-nowrap">管理员</span>' : ''}
                             </div>
                         </td>
                         <td class="px-6 py-4">
-                            <span class="px-2 py-1 rounded-full text-xs ${user.isDisabled ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}">
+                            <span class="px-2 py-1 rounded-full text-xs ${user.isDisabled ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'} whitespace-nowrap">
                                 ${user.isDisabled ? '<i class="fas fa-ban mr-1"></i>已禁用' : '<i class="fas fa-check mr-1"></i>正常'}
                             </span>
                         </td>
                         <td class="px-6 py-4">
-                            <div class="flex flex-wrap gap-1">${dirsHtml}</div>
+                            <div class="flex flex-wrap gap-1 max-w-xs">${dirsHtml}</div>
                         </td>
                         <td class="px-6 py-4 text-sm text-slate-400">
                             ${formatDate(user.createdAt)}
