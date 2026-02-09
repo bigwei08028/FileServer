@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>用户管理 - FileServer</title>
+    <script src="lib/tailwindcss.js"></script>
+    <link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #0f172a;
+            min-height: 100vh;
+        }
+        .glass-card {
+            background: rgba(30, 41, 59, 0.8);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .input-field {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+        }
+        .input-field:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+        }
+        .dir-tree-item {
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+        .dir-tree-item:hover {
+            background: rgba(59, 130, 246, 0.2);
+        }
+        .dir-tree-item.selected {
+            background: rgba(59, 130, 246, 0.3);
+            border: 1px solid #3b82f6;
+        }
+        .dir-tree-item.readonly {
+            border-left: 3px solid #eab308;
+        }
+        .loading-spinner {
+            border: 3px solid rgba(59, 130, 246, 0.3);
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="text-white">
+    <!-- Header -->
+    <header class="glass-card sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <a href="/" class="flex items-center gap-2 text-blue-400 hover:text-blue-300 transition">
+                    <i class="fas fa-arrow-left"></i>
+                    <span>返回文件管理</span>
+                </a>
+                <div class="h-6 w-px bg-slate-600"></div>
+                <h1 class="text-lg font-semibold"><i class="fas fa-users mr-2"></i>用户管理</h1>
+            </div>
+            <div class="flex items-center gap-4">
+                <span id="currentUser" class="text-sm text-slate-400"></span>
+                <button onclick="logout()" class="text-sm text-red-400 hover:text-red-300">
+                    <i class="fas fa-sign-out-alt mr-1"></i>退出
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 py-8">
+        <!-- Add User Button -->
+        <div class="mb-6 flex justify-between items-center">
+            <div class="text-slate-400 text-sm">
+                <i class="fas fa-info-circle mr-1"></i>
+                只有管理员可以管理用户账户
+            </div>
+            <button onclick="showAddUserModal()" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition flex items-center gap-2">
+                <i class="fas fa-user-plus"></i>
+                添加用户
+            </button>
+        </div>
+
+        <!-- Users Table -->
+        <div class="glass-card rounded-xl overflow-hidden">
+            <table class="w-full">
+                <thead class="bg-slate-800/50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">用户名</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">状态</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">目录权限</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">创建时间</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">更新时间</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">操作</th>
+                    </tr>
+                </thead>
+                <tbody id="usersTableBody" class="divide-y divide-slate-700/50">
+                    <!-- Users will be loaded here -->
+                </tbody>
+            </table>
+        </div>
+    </main>
+
+    <!-- Add User Modal -->
+    <div id="addUserModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 hidden">
+        <div class="glass-card rounded-2xl p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+            <h2 class="text-xl font-semibold mb-6">添加新用户</h2>
+            <form id="addUserForm" onsubmit="handleAddUser(event)">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-slate-300 mb-2">用户名</label>
+                    <input type="text" id="newUsername" required minlength="3" maxlength="20"
+                           class="input-field w-full px-4 py-3 rounded-lg text-white placeholder-slate-500 focus:outline-none"
+                           placeholder="3-20个字符">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-slate-300 mb-2">密码</label>
+                    <input type="password" id="newPassword" required minlength="6"
+                           class="input-field w-full px-4 py-3 rounded-lg text-white placeholder-slate-500 focus:outline-none"
+                           placeholder="至少6个字符">
+                </div>
+
+                <!-- Directory Permissions -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-slate-300 mb-2">
+                        访问目录
+                        <button type="button" onclick="showDirSelector('add')" class="ml-2 text-blue-400 hover:text-blue-300 text-xs">
+                            <i class="fas fa-folder-open mr-1"></i>选择目录
+                        </button>
+                    </label>
+                    <div id="addDirList" class="flex flex-wrap gap-2 min-h-[40px] p-2 bg-slate-800/50 rounded-lg border border-slate-700">
+                        <span class="text-slate-500 text-sm italic" id="addDirEmpty">点击"选择目录"或输入 * 表示所有目录</span>
+                    </div>
+                    <input type="hidden" id="addDirAccess" value="[]">
+                </div>
+
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-slate-300 mb-2">快捷设置</label>
+                    <div class="flex gap-3">
+                        <button type="button" onclick="setAllAccess('add')"
+                                class="flex-1 px-3 py-2 rounded-lg bg-blue-600/20 border border-blue-500/30 text-blue-400 hover:bg-blue-600/30 transition text-sm">
+                            <i class="fas fa-globe mr-1"></i>所有目录(读写)
+                        </button>
+                        <button type="button" onclick="setAllReadOnly('add')"
+                                class="flex-1 px-3 py-2 rounded-lg bg-amber-600/20 border border-amber-500/30 text-amber-400 hover:bg-amber-600/30 transition text-sm">
+                            <i class="fas fa-eye mr-1"></i>所有目录(只读)
+                        </button>
+                    </div>
+                </div>
+
+                <div id="addUserError" class="mb-4 text-center text-red-400 text-sm hidden"></div>
+                <div class="flex gap-3">
+                    <button type="button" onclick="hideAddUserModal()"
+                            class="flex-1 px-4 py-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition">
+                        取消
+                    </button>
+                    <button type="submit"
+                            class="flex-1 px-4 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 transition">
+                        添加
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit User Modal -->
+    <div id="editUserModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 hidden">
+        <div class="glass-card rounded-2xl p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+            <h2 class="text-xl font-semibold mb-6">编辑用户</h2>
+            <form id="editUserForm" onsubmit="handleEditUser(event)">
+                <input type="hidden" id="editUsername">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-slate-300 mb-2">新密码（留空则不修改）</label>
+                    <input type="password" id="editPassword" minlength="6"
+                           class="input-field w-full px-4 py-3 rounded-lg text-white placeholder-slate-500 focus:outline-none"
+                           placeholder="至少6个字符">
+                </div>
+
+                <!-- Directory Permissions -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-slate-300 mb-2">
+                        访问目录
+                        <button type="button" onclick="showDirSelector('edit')" class="ml-2 text-blue-400 hover:text-blue-300 text-xs">
+                            <i class="fas fa-folder-open mr-1"></i>选择目录
+                        </button>
+                    </label>
+                    <div id="editDirList" class="flex flex-wrap gap-2 min-h-[40px] p-2 bg-slate-800/50 rounded-lg border border-slate-700">
+                        <span class="text-slate-500 text-sm italic">点击"选择目录"添加目录</span>
+                    </div>
+                    <input type="hidden" id="editDirAccess" value="[]">
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-slate-300 mb-2">快捷设置</label>
+                    <div class="flex gap-3">
+                        <button type="button" onclick="setAllAccess('edit')"
+                                class="flex-1 px-3 py-2 rounded-lg bg-blue-600/20 border border-blue-500/30 text-blue-400 hover:bg-blue-600/30 transition text-sm">
+                            <i class="fas fa-globe mr-1"></i>所有目录(读写)
+                        </button>
+                        <button type="button" onclick="setAllReadOnly('edit')"
+                                class="flex-1 px-3 py-2 rounded-lg bg-amber-600/20 border border-amber-500/30 text-amber-400 hover:bg-amber-600/30 transition text-sm">
+                            <i class="fas fa-eye mr-1"></i>所有目录(只读)
+                        </button>
+                    </div>
+                </div>
+
+                <div class="mb-6">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" id="editIsDisabled"
+                               class="w-4 h-4 rounded bg-slate-700 border-slate-600 text-blue-600 focus:ring-blue-500">
+                        <span class="text-sm text-slate-300">禁用账户</span>
+                    </label>
+                </div>
+
+                <div id="editUserError" class="mb-4 text-center text-red-400 text-sm hidden"></div>
+                <div class="flex gap-3">
+                    <button type="button" onclick="hideEditUserModal()"
+                            class="flex-1 px-4 py-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition">
+                        取消
+                    </button>
+                    <button type="submit"
+                            class="flex-1 px-4 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 transition">
+                        保存
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Directory Selector Modal -->
+    <div id="dirSelectorModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 hidden">
+        <div class="glass-card rounded-2xl p-6 w-full max-w-md mx-4 max-h-[80vh] flex flex-col">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold">
+                    <i class="fas fa-folder-tree mr-2"></i>选择目录
+                </h3>
+                <button onclick="hideDirSelector()" class="text-slate-400 hover:text-white transition">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <!-- Permission Type Selection -->
+            <div class="mb-4 p-3 bg-slate-800/50 rounded-lg border border-slate-700">
+                <label class="block text-sm font-medium text-slate-300 mb-2">为选中目录设置权限</label>
+                <div class="flex gap-4">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" name="dirPermType" value="false" checked
+                               class="w-4 h-4 text-blue-600 focus:ring-blue-500">
+                        <span class="text-sm text-slate-300">
+                            <i class="fas fa-pen text-blue-400 mr-1"></i>读写
+                        </span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" name="dirPermType" value="true"
+                               class="w-4 h-4 text-amber-600 focus:ring-amber-500">
+                        <span class="text-sm text-slate-300">
+                            <i class="fas fa-eye text-amber-400 mr-1"></i>只读
+                        </span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Current Selected -->
+            <div id="selectedDirInfo" class="mb-3 p-2 bg-blue-500/10 border border-blue-500/30 rounded-lg text-sm hidden">
+                <span class="text-blue-400">已选择：</span>
+                <span id="selectedDirPath" class="text-white"></span>
+                <span id="selectedDirPerm" class="ml-2"></span>
+            </div>
+
+            <!-- Directory Tree -->
+            <div id="dirTree" class="flex-1 overflow-y-auto border border-slate-700 rounded-lg p-2 bg-slate-800/30" style="min-height: 300px;">
+                <div class="flex items-center justify-center h-full">
+                    <div class="loading-spinner"></div>
+                </div>
+            </div>
+
+            <div class="flex gap-3 mt-4">
+                <button type="button" onclick="hideDirSelector()"
+                        class="flex-1 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 transition">
+                    取消
+                </button>
+                <button type="button" onclick="confirmSelectDir()"
+                        class="flex-1 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 transition">
+                    添加选中目录
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirm Modal -->
+    <div id="deleteModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 hidden">
+        <div class="glass-card rounded-2xl p-6 w-full max-w-sm mx-4 text-center">
+            <div class="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-4">
+                <i class="fas fa-exclamation-triangle text-red-400 text-xl"></i>
+            </div>
+            <h3 class="text-lg font-semibold mb-2">确认删除</h3>
+            <p class="text-slate-400 text-sm mb-6">确定要删除用户 <span id="deleteUsername" class="text-white font-medium"></span> 吗？此操作不可恢复。</p>
+            <input type="hidden" id="deleteUserTarget">
+            <div class="flex gap-3">
+                <button onclick="hideDeleteModal()"
+                        class="flex-1 px-4 py-3 rounded-lg bg-slate-700 hover:bg-slate-600 transition">
+                    取消
+                </button>
+                <button onclick="confirmDelete()"
+                        class="flex-1 px-4 py-3 rounded-lg bg-red-600 hover:bg-red-700 transition">
+                    删除
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-4 right-4 px-4 py-3 rounded-lg shadow-lg hidden transform transition-all duration-300 translate-y-2 opacity-0">
+    </div>
+
+    <script>
+        let users = [];
+        let currentUser = localStorage.getItem('username') || '';
+        let dirTreeData = null;
+        let currentModalType = 'add'; // 'add' or 'edit'
+        let tempSelectedDir = null;
+
+        // Check authentication and admin status
+        async function checkAuth() {
+            const token = localStorage.getItem('authToken');
+            if (!token) {
+                window.location.href = '/login.html';
+                return false;
+            }
+
+            try {
+                const res = await fetch('/api/verify', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                if (!res.ok) {
+                    localStorage.removeItem('authToken');
+                    localStorage.removeItem('username');
+                    window.location.href = '/login.html';
+                    return false;
+                }
+                const data = await res.json();
+                if (data.code === 0 && data.data) {
+                    currentUser = data.data.username;
+                    localStorage.setItem('username', currentUser);
+                    document.getElementById('currentUser').textContent = currentUser;
+                    return currentUser;
+                }
+            } catch (e) {
+                window.location.href = '/login.html';
+                return false;
+            }
+            return false;
+        }
+
+        // Load users
+        async function loadUsers() {
+            const token = localStorage.getItem('authToken');
+            try {
+                const res = await fetch('/api/users', {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                const data = await res.json();
+                if (data.code === 0 && data.data) {
+                    users = data.data;
+                    renderUsers();
+                } else {
+                    showToast(data.message || '加载用户列表失败', 'error');
+                }
+            } catch (e) {
+                showToast('加载用户列表失败', 'error');
+            }
+        }
+
+        // Render users table
+        function renderUsers() {
+            const tbody = document.getElementById('usersTableBody');
+            tbody.innerHTML = users.map(user => {
+                // 渲染目录权限
+                let dirsHtml = '';
+                if (user.dirAccess && user.dirAccess.length > 0) {
+                    dirsHtml = user.dirAccess.map(d => {
+                        if (d.path === '*') {
+                            return `<span class="inline-flex items-center gap-1 px-2 py-1 rounded bg-blue-500/20 text-blue-400 text-xs border border-blue-500/30 mr-1 mb-1">
+                                <i class="fas fa-globe"></i> 所有目录
+                                <span class="ml-1 px-1 rounded ${d.isReadOnly ? 'bg-amber-500/20 text-amber-400' : 'bg-green-500/20 text-green-400'}">
+                                    ${d.isReadOnly ? '<i class="fas fa-eye"></i>只读' : '<i class="fas fa-pen"></i>读写'}
+                                </span>
+                            </span>`;
+                        }
+                        return `<span class="inline-flex items-center gap-1 px-2 py-1 rounded bg-slate-700/50 text-slate-300 text-xs border border-slate-600 mr-1 mb-1">
+                            <i class="fas fa-folder text-amber-500"></i> ${escapeHtml(d.path)}
+                            <span class="ml-1 px-1 rounded ${d.isReadOnly ? 'bg-amber-500/20 text-amber-400' : 'bg-green-500/20 text-green-400'}">
+                                ${d.isReadOnly ? '<i class="fas fa-eye"></i>只读' : '<i class="fas fa-pen"></i>读写'}
+                            </span>
+                        </span>`;
+                    }).join('');
+                } else {
+                    dirsHtml = '<span class="text-slate-500 text-sm">无权限</span>';
+                }
+
+                return `
+                    <tr class="hover:bg-slate-800/30 transition">
+                        <td class="px-6 py-4">
+                            <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
+                                    <i class="fas fa-user text-blue-400 text-sm"></i>
+                                </div>
+                                <span class="font-medium">${escapeHtml(user.username)}</span>
+                                ${user.username === 'admin' ? '<span class="status-badge bg-yellow-500/20 text-yellow-500 ml-2">管理员</span>' : ''}
+                            </div>
+                        </td>
+                        <td class="px-6 py-4">
+                            <span class="px-2 py-1 rounded-full text-xs ${user.isDisabled ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}">
+                                ${user.isDisabled ? '<i class="fas fa-ban mr-1"></i>已禁用' : '<i class="fas fa-check mr-1"></i>正常'}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4">
+                            <div class="flex flex-wrap gap-1">${dirsHtml}</div>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-slate-400">
+                            ${formatDate(user.createdAt)}
+                        </td>
+                        <td class="px-6 py-4 text-sm text-slate-400">
+                            ${formatDate(user.updatedAt)}
+                        </td>
+                        <td class="px-6 py-4">
+                            <div class="flex items-center gap-2">
+                                <button onclick="showEditUserModal('${escapeHtml(user.username)}')"
+                                        class="p-2 text-blue-400 hover:bg-blue-500/20 rounded-lg transition"
+                                        title="编辑">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                ${user.username !== 'admin' ? `
+                                    <button onclick="showDeleteModal('${escapeHtml(user.username)}')"
+                                            class="p-2 text-red-400 hover:bg-red-500/20 rounded-lg transition"
+                                            title="删除">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // Show add user modal
+        function showAddUserModal() {
+            document.getElementById('addUserForm').reset();
+            document.getElementById('addDirAccess').value = '[]';
+            document.getElementById('addDirList').innerHTML = '<span class="text-slate-500 text-sm italic" id="addDirEmpty">点击"选择目录"或输入 * 表示所有目录</span>';
+            document.getElementById('addUserError').classList.add('hidden');
+            document.getElementById('addUserModal').classList.remove('hidden');
+        }
+
+        // Hide add user modal
+        function hideAddUserModal() {
+            document.getElementById('addUserModal').classList.add('hidden');
+        }
+
+        // Show edit user modal
+        function showEditUserModal(username) {
+            const user = users.find(u => u.username === username);
+            if (!user) return;
+
+            document.getElementById('editUsername').value = user.username;
+            document.getElementById('editPassword').value = '';
+            document.getElementById('editIsDisabled').checked = user.isDisabled;
+
+            // Load directory access
+            const dirAccess = user.dirAccess || [];
+            document.getElementById('editDirAccess').value = JSON.stringify(dirAccess);
+            renderDirList('edit', dirAccess);
+
+            document.getElementById('editUserError').classList.add('hidden');
+            document.getElementById('editUserModal').classList.remove('hidden');
+        }
+
+        // Hide edit user modal
+        function hideEditUserModal() {
+            document.getElementById('editUserModal').classList.add('hidden');
+        }
+
+        // Directory selector functions
+        async function showDirSelector(modalType) {
+            currentModalType = modalType;
+            tempSelectedDir = null;
+            document.getElementById('dirSelectorModal').classList.remove('hidden');
+
+            // Load directory tree
+            await loadDirTree();
+
+            // Show current selections
+            const currentDirs = JSON.parse(document.getElementById(modalType + 'DirAccess').value || '[]');
+            highlightSelectedDirs(currentDirs);
+        }
+
+        function hideDirSelector() {
+            document.getElementById('dirSelectorModal').classList.add('hidden');
+        }
+
+        async function loadDirTree() {
+            const treeContainer = document.getElementById('dirTree');
+            treeContainer.innerHTML = '<div class="flex items-center justify-center h-40"><div class="loading-spinner"></div></div>';
+
+            try {
+                const token = localStorage.getItem('authToken');
+                console.log('Loading directory tree...');
+                const res = await fetch('/api/dirs-tree?path=.', {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                const data = await res.json();
+                console.log('Dir tree response:', JSON.stringify(data, null, 2));
+
+                if (data.code === 0 && data.data) {
+                    dirTreeData = data.data;
+                    console.log('Rendering dir node:', data.data);
+                    treeContainer.innerHTML = renderDirNode(data.data, '.');
+                } else {
+                    treeContainer.innerHTML = '<div class="text-center text-slate-400 py-8">加载目录失败: ' + (data.message || '未知错误') + '</div>';
+                }
+            } catch (e) {
+                console.error('Error loading dir tree:', e);
+                treeContainer.innerHTML = '<div class="text-center text-red-400 py-8">加载目录失败: ' + e.message + '</div>';
+            }
+        }
+
+        function renderDirNode(node, parentPath) {
+            // 后端返回的 node.path 已经是正确的相对路径
+            const fullPath = node.path;
+            const displayPath = node.path === '.' ? 'files (根目录)' : node.name;
+            const isRoot = node.path === '.';
+
+            const paddingLeft = isRoot ? 'pl-2' : 'pl-6';
+
+            let html = `
+                <div class="dir-tree-item ${paddingLeft}" data-path="${escapeHtml(fullPath)}">
+                    <div class="flex items-center gap-2 py-1">
+                        ${isRoot ? '<i class="fas fa-hdd text-blue-400"></i>' : '<i class="fas fa-folder text-amber-500"></i>'}
+                        <span class="${isRoot ? 'text-blue-400 font-medium' : 'text-slate-300'}">${escapeHtml(displayPath)}</span>
+                    </div>
+                </div>
+            `;
+
+            if (node.children && node.children.length > 0) {
+                html += '<div class="border-l border-slate-700 ml-3">';
+                node.children.forEach(child => {
+                    html += renderDirNode(child, fullPath);
+                });
+                html += '</div>';
+            }
+
+            return html;
+        }
+
+        // Directory tree click handler
+        document.getElementById('dirTree').addEventListener('click', function(e) {
+            const item = e.target.closest('.dir-tree-item');
+            if (!item) return;
+
+            // Remove previous selection
+            this.querySelectorAll('.dir-tree-item').forEach(el => el.classList.remove('selected'));
+
+            // Add selection
+            item.classList.add('selected');
+            tempSelectedDir = item.dataset.path;
+
+            // Update info
+            const infoDiv = document.getElementById('selectedDirInfo');
+            const permType = document.querySelector('input[name="dirPermType"]:checked').value;
+            infoDiv.classList.remove('hidden');
+            document.getElementById('selectedDirPath').textContent = tempSelectedDir === '.' ? '根目录' : tempSelectedDir;
+            document.getElementById('selectedDirPerm').innerHTML = permType === 'true'
+                ? '<span class="text-amber-400"><i class="fas fa-eye"></i> 只读</span>'
+                : '<span class="text-green-400"><i class="fas fa-pen"></i> 读写</span>';
+        });
+
+        // Permission type change handler
+        document.querySelectorAll('input[name="dirPermType"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                if (tempSelectedDir) {
+                    document.getElementById('selectedDirPerm').innerHTML = this.value === 'true'
+                        ? '<span class="text-amber-400"><i class="fas fa-eye"></i> 只读</span>'
+                        : '<span class="text-green-400"><i class="fas fa-pen"></i> 读写</span>';
+                }
+            });
+        });
+
+        function confirmSelectDir() {
+            if (!tempSelectedDir) {
+                showToast('请先选择一个目录', 'error');
+                return;
+            }
+
+            const permType = document.querySelector('input[name="dirPermType"]:checked').value;
+            const dirAccess = JSON.parse(document.getElementById(currentModalType + 'DirAccess').value || '[]');
+
+            // Check if already exists
+            const existingIndex = dirAccess.findIndex(d => d.path === tempSelectedDir);
+            if (existingIndex >= 0) {
+                dirAccess[existingIndex].isReadOnly = permType === 'true';
+            } else {
+                dirAccess.push({
+                    path: tempSelectedDir,
+                    isReadOnly: permType === 'true'
+                });
+            }
+
+            document.getElementById(currentModalType + 'DirAccess').value = JSON.stringify(dirAccess);
+            renderDirList(currentModalType, dirAccess);
+            hideDirSelector();
+            showToast('目录已添加', 'success');
+        }
+
+        function renderDirList(modalType, dirAccess) {
+            const container = document.getElementById(modalType + 'DirList');
+            const emptyEl = document.getElementById(modalType + 'DirEmpty');
+
+            if (dirAccess.length === 0) {
+                if (emptyEl) {
+                    emptyEl.style.display = 'block';
+                } else {
+                    container.innerHTML = '<span class="text-slate-500 text-sm italic" id="' + modalType + 'DirEmpty">点击"选择目录"添加目录</span>';
+                }
+                return;
+            }
+
+            container.innerHTML = dirAccess.map((d, index) => {
+                const pathDisplay = d.path === '*' ? '<i class="fas fa-globe"></i> 所有目录' : '<i class="fas fa-folder"></i> ' + escapeHtml(d.path);
+                const permClass = d.isReadOnly ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+                const permIcon = d.isReadOnly ? '<i class="fas fa-eye"></i>' : '<i class="fas fa-pen"></i>';
+                return `
+                    <span class="inline-flex items-center gap-1 px-2 py-1 rounded border ${permClass} text-xs">
+                        ${pathDisplay}
+                        <span class="ml-1">${permIcon}</span>
+                        <button type="button" onclick="removeDir('${modalType}', ${index})" class="ml-1 text-slate-400 hover:text-red-400">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </span>
+                `;
+            }).join('');
+        }
+
+        function removeDir(modalType, index) {
+            const dirAccess = JSON.parse(document.getElementById(modalType + 'DirAccess').value || '[]');
+            dirAccess.splice(index, 1);
+            document.getElementById(modalType + 'DirAccess').value = JSON.stringify(dirAccess);
+            renderDirList(modalType, dirAccess);
+        }
+
+        function setAllAccess(modalType) {
+            document.getElementById(modalType + 'DirAccess').value = JSON.stringify([{ path: '*', isReadOnly: false }]);
+            renderDirList(modalType, [{ path: '*', isReadOnly: false }]);
+        }
+
+        function setAllReadOnly(modalType) {
+            document.getElementById(modalType + 'DirAccess').value = JSON.stringify([{ path: '*', isReadOnly: true }]);
+            renderDirList(modalType, [{ path: '*', isReadOnly: true }]);
+        }
+
+        function highlightSelectedDirs(dirAccess) {
+            const paths = dirAccess.map(d => d.path);
+            document.querySelectorAll('#dirTree .dir-tree-item').forEach(item => {
+                if (paths.includes(item.dataset.path)) {
+                    item.classList.add('selected');
+                } else {
+                    item.classList.remove('selected');
+                }
+            });
+        }
+
+        // Handle add user
+        async function handleAddUser(e) {
+            e.preventDefault();
+            const errorEl = document.getElementById('addUserError');
+            errorEl.classList.add('hidden');
+
+            const username = document.getElementById('newUsername').value.trim();
+            const password = document.getElementById('newPassword').value;
+            const dirAccess = JSON.parse(document.getElementById('addDirAccess').value || '[]');
+
+            if (dirAccess.length === 0) {
+                errorEl.textContent = '请至少设置一个访问目录';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+
+            const token = localStorage.getItem('authToken');
+
+            try {
+                const res = await fetch('/api/users/create', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    },
+                    body: JSON.stringify({
+                        username,
+                        password,
+                        dirAccess
+                    })
+                });
+
+                const data = await res.json();
+
+                if (data.code === 0) {
+                    hideAddUserModal();
+                    loadUsers();
+                    showToast('用户创建成功', 'success');
+                } else {
+                    errorEl.textContent = data.message || '创建失败';
+                    errorEl.classList.remove('hidden');
+                }
+            } catch (e) {
+                errorEl.textContent = '网络错误，请稍后重试';
+                errorEl.classList.remove('hidden');
+            }
+        }
+
+        // Handle edit user
+        async function handleEditUser(e) {
+            e.preventDefault();
+            const errorEl = document.getElementById('editUserError');
+            errorEl.classList.add('hidden');
+
+            const username = document.getElementById('editUsername').value;
+            const password = document.getElementById('editPassword').value;
+            const dirAccess = JSON.parse(document.getElementById('editDirAccess').value || '[]');
+            const isDisabled = document.getElementById('editIsDisabled').checked;
+
+            if (dirAccess.length === 0) {
+                errorEl.textContent = '请至少设置一个访问目录';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+
+            const body = {
+                dirAccess,
+                isDisabled
+            };
+
+            if (password) {
+                body.password = password;
+            }
+
+            const token = localStorage.getItem('authToken');
+
+            try {
+                const res = await fetch('/api/users/update?username=' + encodeURIComponent(username), {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    },
+                    body: JSON.stringify(body)
+                });
+
+                const data = await res.json();
+
+                if (data.code === 0) {
+                    hideEditUserModal();
+                    loadUsers();
+                    showToast('用户更新成功', 'success');
+                } else {
+                    errorEl.textContent = data.message || '更新失败';
+                    errorEl.classList.remove('hidden');
+                }
+            } catch (e) {
+                errorEl.textContent = '网络错误，请稍后重试';
+                errorEl.classList.remove('hidden');
+            }
+        }
+
+        // Delete modal functions
+        function showDeleteModal(username) {
+            document.getElementById('deleteUsername').textContent = username;
+            document.getElementById('deleteUserTarget').value = username;
+            document.getElementById('deleteModal').classList.remove('hidden');
+        }
+
+        function hideDeleteModal() {
+            document.getElementById('deleteModal').classList.add('hidden');
+        }
+
+        async function confirmDelete() {
+            const username = document.getElementById('deleteUserTarget').value;
+            const token = localStorage.getItem('authToken');
+
+            try {
+                const res = await fetch('/api/users/delete?username=' + encodeURIComponent(username), {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+
+                const data = await res.json();
+
+                if (data.code === 0) {
+                    hideDeleteModal();
+                    loadUsers();
+                    showToast('用户已删除', 'success');
+                } else {
+                    showToast(data.message || '删除失败', 'error');
+                }
+            } catch (e) {
+                showToast('网络错误，请稍后重试', 'error');
+            }
+        }
+
+        // Logout
+        function logout() {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('username');
+            window.location.href = '/login.html';
+        }
+
+        // Toast notification
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'fixed bottom-4 right-4 px-4 py-3 rounded-lg shadow-lg transform transition-all duration-300 translate-y-2 opacity-0';
+
+            if (type === 'success') {
+                toast.classList.add('bg-green-600', 'text-white');
+            } else if (type === 'error') {
+                toast.classList.add('bg-red-600', 'text-white');
+            } else {
+                toast.classList.add('bg-blue-600', 'text-white');
+            }
+
+            toast.classList.remove('hidden', 'translate-y-2', 'opacity-0');
+
+            setTimeout(() => {
+                toast.classList.add('translate-y-2', 'opacity-0');
+                setTimeout(() => toast.classList.add('hidden'), 300);
+            }, 3000);
+        }
+
+        // Utility functions
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            const date = new Date(dateStr);
+            return date.toLocaleString('zh-CN');
+        }
+
+        // Initialize
+        (async function() {
+            const isAdmin = await checkAuth();
+            if (isAdmin) {
+                await loadUsers();
+            }
+        })();
+    </script>
+</body>
+</html>
